@@ -1,0 +1,287 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "projectName": {
+            "type": "string"
+        },
+        "apiVersions": {
+            "type": "object"
+        },
+        "uniqueNameFix": {
+            "type": "string"
+        },
+        "subnetId": {
+            "type": "string"
+        },
+        "zoneCount": {
+            "type": "int",
+            "defaultValue": 2
+        },
+        "adminUserName": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Admin username on all VMs."
+            }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Admin password on all VMs."
+            }
+        },
+        "bootstrapStorageAccountSas": {
+            "type": "securestring"
+        },
+        "omsWorkspaceId": {
+            "type": "string"
+        },
+        "omsWorkspaceKey": {
+            "type": "string"
+        },
+        "storageAccountId": {
+            "type": "string"
+        },
+        "healthCheckUri": {
+            "type": "string",
+            "defaultValue": "/health"
+        },
+        "healthCheckPort": {
+            "type": "int",
+            "defaultValue": 8080
+        }
+    },
+    "variables": {
+        "apiVersions": "[parameters('apiVersions')]",
+        "uniqueNameFix": "[parameters('uniqueNameFix')]",
+        "vmName": "[concat('frontend-vm-', variables('uniqueNameFix'))]",
+        "ipName": "[concat('frontend-ip-', variables('uniqueNameFix'))]",
+        "dnsName": "[concat('frontend-dns-', variables('uniqueNameFix'))]",
+        "nicName": "[concat('frontend-nic-', variables('uniqueNameFix'))]",
+        "nsgName": "[concat('frontend-nsg-', variables('uniqueNameFix'))]",
+        "dskName": "[concat('frontend-dsk-', variables('uniqueNameFix'))]",
+        "subnetId": "[parameters('subnetId')]",
+        "zoneCount": "[parameters('zoneCount')]",
+        "lbName": "[concat('frontend-lb-', variables('uniqueNameFix'))]",
+        "bpName": "[concat('frontend-bp-', variables('uniqueNameFix'))]",
+        "lbId": "[resourceId('Microsoft.Network/loadBalancers',variables('lbName'))]",
+        "lbPoolId": "[concat(variables('lbId'),'/backendAddressPools/', variables('bpName'))]",
+        "lbProbeId": "[concat(variables('lbId'),'/probes/healthCheck')]",
+        "singleQuote": "'"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "[variables('apiVersions').publicIPAddresses]",
+            "name": "[variables('ipName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard"
+            },
+            "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                    "domainNameLabel": "[variables('dnsName')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/loadBalancers",
+            "apiVersion": "[variables('apiVersions').loadBalancers]",
+            "name": "[variables('lbName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[variables('ipName')]"
+            ],
+            "sku": {
+                "name": "Standard"
+            },
+            "properties": {
+                "frontendIPConfigurations": [
+                    {
+                        "name": "LoadBalancerFrontEnd",
+                        "properties": {
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('ipName'))]"
+                            }
+                        }
+                    }
+                ],
+                "backendAddressPools": [
+                    {
+                        "name": "[variables('bpName')]"
+                    }
+                ],
+                "loadBalancingRules": [
+                    {
+                        "name": "LBRule",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(variables('lbId'),'/frontendIPConfigurations/loadBalancerFrontEnd')]"
+                            },
+                            "backendAddressPool": {
+                                "id": "[variables('lbPoolId')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 8080,
+                            "backendPort": 8080,
+                            "enableFloatingIP": false,
+                            "idleTimeoutInMinutes": 5,
+                            "probe": {
+                                "id": "[variables('lbProbeId')]"
+                            }
+                        }
+                    }
+                ],
+                "probes": [
+                    {
+                        "name": "healthCheck",
+                        "properties": {
+                            "requestPath": "[parameters('HealthCheckUri')]",
+                            "protocol": "Http",
+                            "port": "[parameters('HealthCheckPort')]",
+                            "intervalInSeconds": 5,
+                            "numberOfProbes": 2
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "[variables('apiVersions').networkSecurityGroups]",
+            "name": "[variables('nsgName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups/securityRules",
+            "apiVersion": "[variables('apiVersions').networkSecurityGroups]",
+            "name": "[concat(variables('nsgName'), '/default_allow_http_name')]",
+            "properties": {
+                "protocol": "TCP",
+                "sourcePortRange": "*",
+                "destinationPortRange": "8080",
+                "sourceAddressPrefix": "*",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 1000,
+                "direction": "Inbound",
+                "sourceAddressPrefixes": [],
+                "destinationAddressPrefixes": []
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "[variables('apiVersions').networkInterfaces]",
+            "name": "[concat(variables('nicName'), '-', copyindex())]",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "name": "nicLoop",
+                "count": "[variables('zoneCount')]"
+            },
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnetId')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[concat(variables('lbId'), '/backendAddressPools/', variables('bpName'))]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "networkSecurityGroup": {
+                    "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/loadBalancers', variables('lbName'))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[concat(variables('vmName'), '-', copyindex())]",
+            "apiVersion": "[variables('apiVersions').virtualMachines]",
+            "location": "[resourceGroup().location]",
+            "zones": "[split(string(add(mod(copyIndex(),3),1)), ',')]",
+            "copy": {
+                "name": "vmLoop",
+                "count": "[variables('zoneCount')]"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_F1"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "Canonical",
+                        "offer": "UbuntuServer",
+                        "sku": "16.04-LTS",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Linux",
+                        "name": "[concat(variables('dskName'), '-', copyindex())]",
+                        "createOption": "FromImage"
+                    }
+                },
+                "osProfile": {
+                    "computerName": "[concat(variables('vmName'), '-', copyIndex())]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('nicName'), '-', copyindex()))]"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "nicLoop"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(variables('vmName'), '-', copyindex(), '/', 'extensions')]",
+            "apiVersion": "[variables('apiVersions').virtualMachinesExtensions]",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "name": "extensionsLoop",
+                "count": "[variables('zoneCount')]"
+            },
+            "dependsOn": [
+                "vmLoop"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Azure.Extensions",
+                "type": "CustomScript",
+                "typeHandlerVersion": "2.0",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "fileUris": [
+                        "[concat(uri(deployment().properties.templateLink.uri, 'frontend-init.sh'), parameters('bootstrapStorageAccountSas'))]",
+                        "[concat(uri(deployment().properties.templateLink.uri, 'frontend.tar.gz'), parameters('bootstrapStorageAccountSas'))]",
+                        "https://raw.githubusercontent.com/Microsoft/OMS-Agent-for-Linux/master/installer/scripts/onboard_agent.sh"
+                    ]
+                },
+                "protectedSettings": {
+                    "commandToExecute": "[concat('./frontend-init.sh',' ', variables('singleQuote'), parameters('projectName'), variables('singleQuote'),' ', variables('singleQuote'), parameters('omsWorkspaceId'), variables('singleQuote'),' ', variables('singleQuote'), parameters('omsWorkspaceKey'), variables('singleQuote'),' ', variables('singleQuote'), parameters('storageAccountId'), variables('singleQuote'))]"
+                }
+            }
+        }
+    ],
+    "outputs": {}
+}

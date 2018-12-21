@@ -1,0 +1,201 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apiVersions": {
+      "type": "object"
+    },
+    "uniqueNameFix": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "adminUserName": {
+      "type": "string",
+      "metadata": {
+        "description": "Admin username on all VMs."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Admin password on all VMs."
+      }
+    },
+    "bootstrapStorageAccount": {
+      "type": "securestring"
+    },
+    "bootstrapStorageAccountSas": {
+      "type": "securestring"
+    },
+    "bootstrapStorageAccountUrl": {
+      "type": "string"
+    },
+    "frontendImageUri": {
+      "type": "string"
+    }
+  },
+  "variables": {
+    "apiVersions": "[parameters('apiVersions')]",
+    "uniqueNameFix": "[parameters('uniqueNameFix')]",
+    "projectName": "[parameters('projectName')]",
+    "adminUserName": "[parameters('adminUserName')]",
+    "adminPassword": "[parameters('adminPassword')]",
+    "bootstrapStorageAccountName": "[parameters('bootstrapStorageAccount')]",
+    "bootstrapStorageAccountId": "[resourceId(subscription().subscriptionId, resourceGroup().name,'Microsoft.Storage/storageAccounts', variables('bootstrapStorageAccountName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "analytics",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'analytics.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "network",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'network.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "storage",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'storage.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "jumpbox",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'jumpbox.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          },
+          "subnetId": {
+            "value": "[reference('network').outputs.jumpboxSubnetId.value]"
+          },
+          "adminUserName": {
+            "value": "[variables('adminUserName')]"
+          },
+          "adminPassword": {
+            "value": "[variables('adminPassword')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "frontend",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'frontend.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          },
+          "subnetId": {
+            "value": "[reference('network').outputs.frontendSubnetId.value]"
+          },
+          "adminUserName": {
+            "value": "[variables('adminUserName')]"
+          },
+          "adminPassword": {
+            "value": "[variables('adminPassword')]"
+          },
+          "bootstrapStorageAccountSas": {
+            "value": "[parameters('bootstrapStorageAccountSas')]"
+          },
+          "omsWorkspaceId": {
+            "value": "[reference('analytics').outputs.workspaceId.value]"
+          },
+          "omsWorkspaceKey": {
+            "value": "[reference('analytics').outputs.workspaceKey.value]"
+          },
+          "storageAccountId": {
+            "value": "[reference('storage').outputs.storageAccountId.value]"
+          },
+          "imageUri": {
+            "value": "[parameters('frontendImageUri')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}

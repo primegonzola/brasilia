@@ -1,0 +1,77 @@
+{
+    "description": "This Packer template prepares a VM O/S disk Requires a Service Prinicipal to authenticate with Azure.",
+    "variables": {
+        "subscription_id": null,
+        "client_id": null,
+        "client_secret": null,
+        "resource_group": null,
+        "storage_account": null,
+        "storage_account_container_subfolder_name": "images",
+        "location": "westeurope",
+        "instance_type": "Standard_F1",
+        "ssh_username": "ubuntu"
+    },
+    "builders": [
+        {
+            "type": "azure-arm",
+            "subscription_id": "{{user `subscription_id`}}",
+            "client_id": "{{user `client_id`}}",
+            "client_secret": "{{user `client_secret`}}",
+            "resource_group_name": "{{user `resource_group`}}",
+            "storage_account": "{{user `storage_account`}}",
+            "capture_container_name": "{{user `storage_account_container_subfolder_name`}}",
+            "capture_name_prefix": "brasilia",
+            "location": "{{user `location`}}",
+            "os_type": "Linux",
+            "os_disk_size_gb": 32,
+            "image_publisher": "Canonical",
+            "image_offer": "UbuntuServer",
+            "image_sku": "16.04-LTS",
+            "vm_size": "{{user `instance_type`}}",
+            "ssh_username": "{{user `ssh_username`}}"
+        }
+    ],
+    "provisioners": [       
+        {
+            "type": "shell",
+            "inline_shebang": "/bin/bash -ex",
+            "environment_vars": [
+                "DEBIAN_FRONTEND=noninteractive"
+            ],
+            "inline": [
+                "# Install Java JDK 8",
+                "sudo add-apt-repository -y ppa:webupd8team/java",
+                "sudo apt-get -qy update",
+                "echo debconf shared/accepted-oracle-license-v1-1 select true | sudo debconf-set-selections",
+                "echo debconf shared/accepted-oracle-license-v1-1 seen   true | sudo debconf-set-selections",
+                "sudo apt-get -qy install oracle-java8-installer"
+            ]
+        }, 
+        {
+            "type": "shell",
+            "inline_shebang": "/bin/bash -ex",
+            "environment_vars": [
+                "DEBIAN_FRONTEND=noninteractive"
+            ],
+            "inline": [
+                "sudo apt-get -qy install jq"
+            ]
+        }, 
+        {
+            "type": "shell",
+            "inline_shebang": "/bin/bash -ex",
+            "environment_vars": [
+                "DEBIAN_FRONTEND=noninteractive"
+            ],
+            "inline": [
+                "# Clean up package database and unnecessary packages",
+                "sudo -E apt-get -qy autoremove",
+                "sudo -E apt-get -qy clean",
+                "sudo -E apt-get -qy autoclean",
+                "# Clean the system and make it suitable for reprovisioning",
+                "# Delete SSH host keys to work around https://github.com/Azure/WALinuxAgent/issues/591",
+                "sudo -E rm -f /etc/ssh/ssh_host_*_key*"
+            ]
+        }
+    ]
+}

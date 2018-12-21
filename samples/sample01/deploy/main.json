@@ -1,0 +1,82 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apiVersions": {
+      "type": "object"
+    },
+    "uniqueNameFix": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "bootstrapStorageAccount": {
+      "type": "securestring"
+    },
+    "bootstrapStorageAccountSas": {
+      "type": "securestring"
+    },
+    "bootstrapStorageAccountUrl": {
+      "type": "securestring"
+    }
+  },
+  "variables": {
+    "projectName": "[parameters('projectName')]",
+    "apiVersions": "[parameters('apiVersions')]",
+    "uniqueNameFix": "[parameters('uniqueNameFix')]",
+    "bootstrapStorageAccountName": "[parameters('bootstrapStorageAccount')]",
+    "bootstrapStorageAccountId": "[resourceId(subscription().subscriptionId, resourceGroup().name,'Microsoft.Storage/storageAccounts', variables('bootstrapStorageAccountName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "network",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'network.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('apiVersions').deployments]",
+      "name": "storage",
+      "dependsOn": [],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[concat(uri(deployment().properties.templateLink.uri, 'storage.json'), parameters('bootstrapStorageAccountSas'))]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "apiVersions": {
+            "value": "[variables('apiVersions')]"
+          },
+          "uniqueNameFix": {
+            "value": "[variables('uniqueNameFix')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}

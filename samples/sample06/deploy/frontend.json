@@ -1,0 +1,303 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "projectName": {
+            "type": "string"
+        },
+        "apiVersions": {
+            "type": "object"
+        },
+        "uniqueNameFix": {
+            "type": "string"
+        },
+        "subnetId": {
+            "type": "string"
+        },
+        "adminUserName": {
+            "type": "string",
+            "metadata": {
+                "description": "Admin username on all VMs."
+            }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Admin password on all VMs."
+            }
+        },
+        "bootstrapStorageAccountSas": {
+            "type": "securestring"
+        },
+        "omsWorkspaceId": {
+            "type": "string"
+        },
+        "omsWorkspaceKey": {
+            "type": "string"
+        },
+        "vmSize": {
+            "type": "string",
+            "defaultValue": "Standard_F1",
+            "metadata": {
+                "description": "Size of VM to use for proxy servers."
+            }
+        },
+        "vmCount": {
+            "type": "int",
+            "defaultValue": 2,
+            "metadata": {
+                "description": "Default Number of proxy servers to deploy and keep running (min and default in scaling set)."
+            },
+            "maxValue": 100
+        },
+        "vmCountMax": {
+            "type": "int",
+            "defaultValue": 10,
+            "metadata": {
+                "description": "Maximum number of proxy servers in scaling set."
+            },
+            "maxValue": 100
+        },
+        "storageAccountId": {
+            "type": "string"
+        },
+        "healthCheckUri": {
+            "type": "string",
+            "defaultValue": "/health"
+        },
+        "healthCheckPort": {
+            "type": "int",
+            "defaultValue": 80
+        }
+    },
+    "variables": {
+        "projectName": "[parameters('projectName')]",
+        "apiVersions": "[parameters('apiVersions')]",
+        "uniqueNameFix": "[parameters('uniqueNameFix')]",
+        "ipName": "[concat('frontend-ip-', variables('uniqueNameFix'))]",
+        "nicName": "[concat('frontend-nic-', variables('uniqueNameFix'))]",
+        "nsgName": "[concat('frontend-nsg-', variables('uniqueNameFix'))]",
+        "lbName": "[concat('frontend-lb-', variables('uniqueNameFix'))]",
+        "bpName": "[concat('frontend-bp-', variables('uniqueNameFix'))]",
+        "dnsName": "[concat('frontend-dns-', variables('uniqueNameFix'))]",
+        "lbId": "[resourceId('Microsoft.Network/loadBalancers',variables('lbName'))]",
+        "lbPoolId": "[concat(variables('lbId'),'/backendAddressPools/', variables('bpName'))]",
+        "lbProbeId": "[concat(variables('lbId'),'/probes/healthCheck')]",
+        "vmssName": "[concat('frontend-vmss-', variables('uniqueNameFix'))]",
+        "vmssPrefix": "[variables('vmssName')]",
+        "storageAccountId": "[parameters('storageAccountId')]",
+        "healthCheckUri": "[parameters('healthCheckUri')]",
+        "healthCheckPort": "[parameters('healthCheckPort')]",
+        "vmssNicName": "[concat('frontend-vmss-nic-', variables('uniqueNameFix'))]",
+        "vmssIpConfigName": "[concat('frontend-vmss-ipconfig', variables('uniqueNameFix'))]",
+        "autoScaleName": "[concat('frontend-vmss-autoscale-', variables('uniqueNameFix'))]",
+        "singleQuote": "'",
+        "imageReference": {
+            "publisher": "Canonical",
+            "offer": "UbuntuServer",
+            "sku": "16.04-LTS",
+            "version": "latest"
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "[variables('apiVersions').publicIPAddresses]",
+            "name": "[variables('ipName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                    "domainNameLabel": "[variables('dnsName')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/loadBalancers",
+            "apiVersion": "[variables('apiVersions').loadBalancers]",
+            "name": "[variables('lbName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[variables('ipName')]"
+            ],
+            "properties": {
+                "frontendIPConfigurations": [
+                    {
+                        "name": "LoadBalancerFrontEnd",
+                        "properties": {
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('ipName'))]"
+                            }
+                        }
+                    }
+                ],
+                "backendAddressPools": [
+                    {
+                        "name": "[variables('bpName')]"
+                    }
+                ],
+                "loadBalancingRules": [
+                    {
+                        "name": "LBRule",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(variables('lbId'),'/frontendIPConfigurations/loadBalancerFrontEnd')]"
+                            },
+                            "backendAddressPool": {
+                                "id": "[variables('lbPoolId')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 8080,
+                            "backendPort": 8080,
+                            "enableFloatingIP": false,
+                            "idleTimeoutInMinutes": 5,
+                            "probe": {
+                                "id": "[variables('lbProbeId')]"
+                            }
+                        }
+                    }
+                ],
+                "probes": [
+                    {
+                        "name": "healthCheck",
+                        "properties": {
+                            "requestPath": "[variables('HealthCheckUri')]",
+                            "protocol": "Http",
+                            "port": 8080,
+                            "intervalInSeconds": 5,
+                            "numberOfProbes": 2
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachineScaleSets",
+            "apiVersion": "[variables('apiVersions').virtualMachineScaleSets]",
+            "name": "[variables('vmssName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "[parameters('vmSize')]",
+                "capacity": "[parameters('vmCount')]"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/loadBalancers',variables('lbName'))]"
+            ],
+            "properties": {
+                "overprovision": false,
+                "upgradePolicy": {
+                    "mode": "Manual"
+                },
+                "virtualMachineProfile": {
+                    "storageProfile": {
+                        "osDisk": {
+                            "caching": "ReadOnly",
+                            "createOption": "FromImage"
+                        },
+                        "dataDisks": [],
+                        "imageReference": "[variables('imageReference')]"
+                    },
+                    "osProfile": {
+                        "computerNamePrefix": "[variables('vmssPrefix')]",
+                        "adminUsername": "[parameters('adminUsername')]",
+                        "adminPassword": "[parameters('adminPassword')]"
+                    },
+                    "networkProfile": {
+                        "networkInterfaceConfigurations": [
+                            {
+                                "name": "[variables('vmssNicName')]",
+                                "properties": {
+                                    "primary": true,
+                                    "ipConfigurations": [
+                                        {
+                                            "name": "[variables('vmssIpConfigName')]",
+                                            "properties": {
+                                                "subnet": {
+                                                    "id": "[parameters('subnetId')]"
+                                                },
+                                                "loadBalancerBackendAddressPools": [
+                                                    {
+                                                        "id": "[variables('lbPoolId')]"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                    "extensionProfile": {
+                        "extensions": [
+                            {
+                                "name": "MSILinuxExtension",
+                                "properties": {
+                                    "publisher": "Microsoft.ManagedIdentity",
+                                    "type": "ManagedIdentityExtensionForLinux",
+                                    "typeHandlerVersion": "1.0",
+                                    "autoUpgradeMinorVersion": true,
+                                    "settings": {
+                                        "port": 50342
+                                    },
+                                    "protectedSettings": {}
+                                }
+                            },
+                            {
+                                "name": "bootstrapcmd",
+                                "properties": {
+                                    "publisher": "Microsoft.Azure.Extensions",
+                                    "type": "CustomScript",
+                                    "typeHandlerVersion": "2.0",
+                                    "autoUpgradeMinorVersion": true,
+                                    "settings": {
+                                        "fileUris": [
+                                            "[concat(uri(deployment().properties.templateLink.uri, 'frontend-init.sh'), parameters('bootstrapStorageAccountSas'))]",
+                                            "[concat(uri(deployment().properties.templateLink.uri, 'frontend.tar.gz'), parameters('bootstrapStorageAccountSas'))]",
+                                            "https://raw.githubusercontent.com/Microsoft/OMS-Agent-for-Linux/master/installer/scripts/onboard_agent.sh"
+                                        ]
+                                    },
+                                    "protectedSettings": {
+                                        "commandToExecute": "[concat('./frontend-init.sh',' ', variables('singleQuote'), parameters('projectName'), variables('singleQuote'),' ', variables('singleQuote'), parameters('omsWorkspaceId'), variables('singleQuote'),' ', variables('singleQuote'), parameters('omsWorkspaceKey'), variables('singleQuote'),' ', variables('singleQuote'), parameters('storageAccountId'), variables('singleQuote'))]"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Insights/autoscaleSettings",
+            "apiVersion": "[variables('apiVersions').autoScaleSettings]",
+            "name": "[variables('autoScaleName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[variables('vmssName')]"
+            ],
+            "properties": {
+                "enabled": true,
+                "name": "[variables('autoScaleName')]",
+                "targetResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets/', variables('vmssName'))]",
+                "profiles": [
+                    {
+                        "name": "Profile1",
+                        "capacity": {
+                            "minimum": "[parameters('vmCount')]",
+                            "maximum": "[parameters('vmCountMax')]",
+                            "default": "[parameters('vmCount')]"
+                        }
+                    }
+                ],
+                "notifications": [
+                    {
+                        "operation": "Scale"
+                    }
+                ]
+            }
+        }
+    ],
+    "outputs": {}
+}

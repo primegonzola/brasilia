@@ -1,0 +1,33 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apiVersions": {
+      "type": "object"
+    },
+    "uniqueNameFix": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "bootstrapStorageAccount": {
+      "type": "securestring"
+    },
+    "bootstrapStorageAccountSas": {
+      "type": "securestring"
+    },
+    "bootstrapStorageAccountUrl": {
+      "type": "securestring"
+    }
+  },
+  "variables": {
+    "projectName": "[parameters('projectName')]",
+    "apiVersions": "[parameters('apiVersions')]",
+    "uniqueNameFix": "[parameters('uniqueNameFix')]",
+    "bootstrapStorageAccountName": "[parameters('bootstrapStorageAccount')]",
+    "bootstrapStorageAccountId": "[resourceId(subscription().subscriptionId, resourceGroup().name,'Microsoft.Storage/storageAccounts', variables('bootstrapStorageAccountName'))]"
+  },
+  "resources": [],
+  "outputs": {}
+}

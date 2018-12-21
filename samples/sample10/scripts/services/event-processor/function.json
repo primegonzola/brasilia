@@ -1,0 +1,14 @@
+{
+  "bindings": [
+    {
+      "type": "eventHubTrigger",
+      "name": "msg",
+      "direction": "in",
+      "connection": "EVENTHUB_CONNECTION",
+      "path": "<eventHubPath>",
+      "cardinality": "many"
+    }
+  ],
+  "disabled": false,
+  "scriptFile": "./index.js"
+}

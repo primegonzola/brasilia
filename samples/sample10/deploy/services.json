@@ -1,0 +1,149 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "projectName": {
+            "type": "string"
+        },
+        "apiVersions": {
+            "type": "object"
+        },
+        "uniqueNameFix": {
+            "type": "string"
+        },
+        "storageAccountId": {
+            "type": "string"
+        },
+        "applicationInsightsKey": {
+            "type": "securestring"
+        },
+        "eventHubConnection": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "apiVersions": "[parameters('apiVersions')]",
+        "uniqueNameFix": "[parameters('uniqueNameFix')]",
+        "functionAppName": "[concat('services-app-', variables('uniqueNameFix'))]",
+        "hostingPlanName": "[concat('services-asp-', variables('uniqueNameFix'))]",
+        "servicesStorageAccountName": "[concat('servicessa', variables('uniqueNameFix'))]",
+        "servicesStorageAccountId": "[resourceId(subscription().subscriptionId, resourceGroup().name,'Microsoft.Storage/storageAccounts', variables('servicesStorageAccountName'))]",
+        "storageAccountId": "[parameters('storageAccountId')]",
+        "applicationInsightsKey": "[parameters('applicationInsightsKey')]",
+        "eventHubConnection": "[parameters('eventHubConnection')]",
+        "Contributor": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "name": "[variables('hostingPlanName')]",
+            "apiVersion": "[variables('apiVersions').serverFarms]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "name": "[variables('hostingPlanName')]",
+                "sku": "Standard"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "[variables('apiVersions').storageAccounts]",
+            "name": "[variables('servicesStorageAccountName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "Storage",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "properties": {}
+        },
+        {
+            "name": "[variables('functionAppName')]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "[variables('apiVersions').sites]",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[variables('servicesStorageAccountId')]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
+            ],
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "AlwaysOn": true,
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsDashboard",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('servicesStorageAccountName'), ';AccountKey=', listKeys(variables('servicesStorageAccountId'), variables('apiVersions').storageAccounts).keys[0].value)]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('servicesStorageAccountName'), ';AccountKey=', listKeys(variables('servicesStorageAccountId'), variables('apiVersions').storageAccounts).keys[0].value)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('servicesStorageAccountName'), ';AccountKey=', listKeys(variables('servicesStorageAccountId'), variables('apiVersions').storageAccounts).keys[0].value)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTSHARE",
+                            "value": "[toLower(variables('functionAppName'))]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~1"
+                        },
+                        {
+                            "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                            "value": "6.5.0"
+                        },
+                        {
+                            "name": "AZURE_SUBSCRIPTION_ID",
+                            "value": "[subscription().subscriptionId]"
+                        },
+                        {
+                            "name": "RESOURCE_GROUP_NAME",
+                            "value": "[resourceGroup().name]"
+                        },
+                        {
+                            "name": "STORAGE_ACCOUNT_ID",
+                            "value": "[variables('storageAccountId')]"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[variables('applicationInsightsKey')]"
+                        },
+                        {
+                            "name": "EVENTHUB_CONNECTION",
+                            "value": "[variables('eventHubConnection')]"
+                        }
+                    ]
+                }
+            },
+            "resources": [
+                {
+                    "apiVersion": "2015-08-01",
+                    "name": "web",
+                    "type": "config",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/Sites', variables('functionAppName'))]"
+                    ],
+                    "properties": {
+                        "scmType": "LocalGit"
+                    }
+                }
+            ]
+        }
+    ],
+    "outputs": {
+        "servicesId": {
+            "value": "[resourceId('Microsoft.Web/Sites', variables('functionAppName'))]",
+            "type": "string"
+        },
+        "servicesPrincipalId": {
+            "value": "[reference(concat(resourceId('Microsoft.Web/sites', variables('functionAppName')),'/providers/Microsoft.ManagedIdentity/Identities/default'),'2015-08-31-PREVIEW').principalId]",
+            "type": "string"
+        }
+    }
+}

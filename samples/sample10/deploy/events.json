@@ -1,0 +1,84 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "projectName": {
+            "type": "string"
+        },
+        "apiVersions": {
+            "type": "object"
+        },
+        "uniqueNameFix": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "apiVersions": "[parameters('apiVersions')]",
+        "uniqueNameFix": "[parameters('uniqueNameFix')]",
+        "namespace": "[concat('events-evs-', variables('uniqueNameFix'))]",
+        "eventHub": "[concat('events-evh-', variables('uniqueNameFix'))]",
+        "consumerGroup": "[concat('events-ecg-', variables('uniqueNameFix'))]",
+        "defaultSASKeyName": "RootManageSharedAccessKey",
+        "authRuleResourceId": "[resourceId('Microsoft.EventHub/namespaces/authorizationRules', variables('namespace'), variables('defaultSASKeyName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.EventHub/Namespaces",
+            "name": "[variables('namespace')]",
+            "apiVersion": "[variables('apiVersions').eventHubs]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard",
+                "tier": "Standard",
+                "capacity": 1
+            },
+            "properties": {},
+            "resources": [
+                {
+                    "type": "EventHubs",
+                    "name": "[variables('eventHub')]",
+                    "apiVersion": "[variables('apiVersions').eventHubs]",
+                    "dependsOn": [
+                        "[concat('Microsoft.EventHub/namespaces/', variables('namespace'))]"
+                    ],
+                    "properties": {},
+                    "resources": [
+                        {
+                            "type": "ConsumerGroups",
+                            "name": "[variables('consumerGroup')]",
+                            "apiVersion": "[variables('apiVersions').eventHubs]",
+                            "dependsOn": [
+                                "[variables('eventHub')]"
+                            ],
+                            "properties": {
+                                "userMetadata": "User Metadata goes here"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "outputs": {
+        "eventHubNamespace": {
+            "type": "string",
+            "value": "[variables('namespace')]"
+        },
+        "eventHubPath": {
+            "type": "string",
+            "value": "[variables('eventHub')]"
+        },
+        "eventHubConsumerGroup": {
+            "type": "string",
+            "value": "[variables('consumerGroup')]"
+        },
+        "eventHubConnection": {
+            "type": "string",
+            "value": "[listkeys(variables('authRuleResourceId'), '2017-04-01').primaryConnectionString]"
+        },
+        "eventHubKey": {
+            "type": "string",
+            "value": "[listkeys(variables('authRuleResourceId'), '2017-04-01').primaryKey]"
+        }
+    }
+}
